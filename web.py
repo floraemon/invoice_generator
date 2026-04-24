@@ -1,4 +1,4 @@
-import io, datetime, uuid
+import io, datetime, uuid, os
 import streamlit as st
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -8,8 +8,29 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_RIGHT, TA_LEFT
 
 # ==========================================
-# 0. 灵活的身份登记逻辑 (无需白名单)
+# 0. 审计日志与身份校验逻辑
 # ==========================================
+def write_audit_log(visitor):
+    """
+    核心优化：此函数会将记录打印到 Streamlit Cloud 的后台日志中
+    你可以在 Manage App -> Logs 看到这些黑窗口文字
+    """
+    # 获取新加坡时间 (假设服务器时间可能不同，直接用本地格式)
+    now = datetime.datetime.now()
+    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    
+    log_msg = f"[{timestamp}] 登录成功: 用户 -> {visitor}"
+    
+    # 1. 打印到后台黑窗口 (你要求的“打印日志”命令)
+    print(log_msg) 
+    
+    # 2. 写入本地文件作为备份
+    try:
+        with open("access_log.txt", "a", encoding="utf-8") as f:
+            f.write(log_msg + "\n")
+    except:
+        pass # 防止环境权限问题导致崩溃
+
 def check_manual_auth():
     if "auth_success" not in st.session_state:
         st.session_state["auth_success"] = False
@@ -19,36 +40,51 @@ def check_manual_auth():
         return True
 
     st.title("🛡️ 财务系统访问审计")
-    st.info("测试阶段：请输入您的身份信息及访问密码。")
+    st.markdown("---")
     
-    # 强制登记项
-    reg_name = st.text_input("您的姓名 / 邮箱 (必填)", placeholder="例如: Zhang San / finance@company.com")
-    reg_password = st.text_input("系统访问密码", type="password")
-    
-    if st.button("进入系统", use_container_width=True):
-        system_password = st.secrets.get("password", "")
+    # 登录表单
+    with st.container():
+        reg_name = st.text_input("请输入您的姓名 / 办公邮箱 (必填)", placeholder="例如: Zhang San")
+        reg_password = st.text_input("访问密码", type="password")
         
-        if not reg_name:
-            st.error("❌ 为了合规审计，请务必填写您的身份信息。")
-        elif reg_password != system_password:
-            st.error("❌ 访问密码错误。")
-        else:
-            st.session_state["auth_success"] = True
-            st.session_state["visitor_name"] = reg_name
-            st.rerun()
+        if st.button("进入系统", use_container_width=True, type="primary"):
+            system_password = st.secrets.get("password", "")
+            
+            if not reg_name:
+                st.error("❌ 审计要求：请先登记您的身份。")
+            elif reg_password != system_password:
+                st.error("❌ 密码错误。")
+            else:
+                # 记录成功登录
+                write_audit_log(reg_name)
+                st.session_state["auth_success"] = True
+                st.session_state["visitor_name"] = reg_name
+                st.rerun()
     return False
 
+# 执行拦截逻辑
 if not check_manual_auth():
     st.stop()
 
-# 侧边栏常驻显示，起到“监工”作用
-st.sidebar.success(f"👤 当前操作员: {st.session_state['visitor_name']}")
-if st.sidebar.button("切换账号/登出"):
+# 侧边栏常驻显示
+st.sidebar.markdown(f"**👤 当前操作员:**\n{st.session_state['visitor_name']}")
+if st.sidebar.button("登出系统"):
     st.session_state["auth_success"] = False
     st.rerun()
 
+# 管理员秘密开关
+if st.sidebar.checkbox("显示最近访问历史"):
+    if os.path.exists("access_log.txt"):
+        with open("access_log.txt", "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            # 只显示最近 10 条，避免刷屏
+            for line in lines[-10:]:
+                st.sidebar.caption(line.strip())
+    else:
+        st.sidebar.caption("暂无历史记录")
+
 # ==========================================
-# 1. 配置信息
+# 1. 业务配置 (HYV)
 # ==========================================
 HYV_DETAILS = {
     "name": "HoYoverse Pte. Ltd.",
@@ -56,7 +92,7 @@ HYV_DETAILS = {
 }
 
 # ==========================================
-# 2. PDF 渲染函数 (完美水平对齐版)
+# 2. PDF 生成函数 (完美对齐版)
 # ==========================================
 def generate_pdf(data):
     items = data.get("items", [])
@@ -85,8 +121,8 @@ def generate_pdf(data):
 
     story = []
     
-    # Header
-    header_data = [[
+    # 头部表格
+    h_table = Table([[
         Paragraph("INVOICE", s_title),
         Table([
             [Paragraph("Invoice No.", s_label),  Paragraph(invoice_no, s_bold)],
@@ -94,61 +130,63 @@ def generate_pdf(data):
             [Paragraph("Due Date", s_label),     Paragraph(data.get("due_date", "-"), s_td)],
             [Paragraph("Terms", s_label),        Paragraph(data.get("terms", "-"), s_td)],
         ], colWidths=[30*mm, 48*mm])
-    ]]
-    story.append(Table(header_data, colWidths=[W*0.5, W*0.5], style=TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')])))
+    ]], colWidths=[W*0.5, W*0.5])
+    h_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    story.append(h_table)
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#4472C4"), spaceAfter=10))
 
-    # FROM / TO 修复水平对齐
-    party_data = [[
+    # From/To (修复对齐)
+    p_table = Table([[
         [Paragraph("FROM", s_bank_h), Spacer(1, 2), Paragraph(data.get("from_name", ""), s_bold), Paragraph(data.get("from_addr", ""), s_small)],
         [Paragraph("BILL TO", s_bank_h), Spacer(1, 2), Paragraph(data.get("to_name", ""), s_bold), Paragraph(data.get("to_addr", ""), s_small)],
-    ]]
-    party_table = Table(party_data, colWidths=[W*0.5, W*0.5])
-    party_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0)]))
-    story.append(party_table)
+    ]], colWidths=[W*0.5, W*0.5])
+    p_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0)]))
+    story.append(p_table)
     story.append(Spacer(1, 15))
 
-    # Items Table
-    table_data = [[Paragraph("#", s_th), Paragraph("Description", s_th), Paragraph("Qty", s_th), Paragraph("Unit Price", s_th), Paragraph("Amount", s_th)]]
-    total_amt = 0
+    # 明细表
+    t_data = [[Paragraph("#", s_th), Paragraph("Description", s_th), Paragraph("Qty", s_th), Paragraph("Unit Price", s_th), Paragraph("Amount", s_th)]]
+    total = 0
     for idx, item in enumerate(items, 1):
         q, p = float(item.get("qty", 0)), float(item.get("price", 0))
         amt = q * p
-        total_amt += amt
-        table_data.append([str(idx), Paragraph(item.get("desc", ""), s_td), f"{q:g}", f"{p:,.2f}", f"{amt:,.2f}"])
+        total += amt
+        t_data.append([str(idx), Paragraph(item.get("desc", ""), s_td), f"{q:g}", f"{p:,.2f}", f"{amt:,.2f}"])
 
-    story.append(Table(table_data, colWidths=[W*0.05, W*0.45, W*0.12, W*0.18, W*0.20], style=TableStyle([
+    main_table = Table(t_data, colWidths=[W*0.05, W*0.45, W*0.12, W*0.18, W*0.20])
+    main_table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#4472C4")),
         ("GRID", (0,1), (-1,-1), 0.3, colors.HexColor("#DDDDDD")),
         ("ALIGN", (2,0), (-1,-1), "RIGHT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
         ("BOTTOMPADDING", (0,0), (-1,-1), 6), ("TOPPADDING", (0,0), (-1,-1), 6),
-    ])))
+    ]))
+    story.append(main_table)
     
-    # Total
+    # 总计栏
     story.append(Spacer(1, 6))
-    story.append(Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total_amt:,.2f}", s_tot_r)]], 
-                       colWidths=[W*0.75, W*0.25], 
-                       style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEF2FF")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 8), ("BOTTOMPADDING", (0,0), (-1,-1), 8)])))
+    tot_table = Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total:,.2f}", s_tot_r)]], colWidths=[W*0.75, W*0.25])
+    tot_table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEF2FF")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 8), ("BOTTOMPADDING", (0,0), (-1,-1), 8)]))
+    story.append(tot_table)
 
-    # Banking
+    # 银行信息
     story.append(Spacer(1, 14))
     story.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#CCCCCC"), spaceAfter=8))
     story.append(Paragraph("Banking Information", s_bank_h))
-    bank_data = [[Paragraph(k, s_label), Paragraph(v, s_bank)] for k, v in [
+    b_rows = [[Paragraph(k, s_label), Paragraph(v, s_bank)] for k, v in [
         ("Account Name", data.get("b_name", "")), ("Account Number", data.get("b_acc", "")),
         ("Bank Name", data.get("b_bank", "")), ("SWIFT Code", data.get("b_swift", "")), ("Bank Address", data.get("b_addr", ""))
     ]]
-    story.append(Table(bank_data, colWidths=[W*0.32, W*0.68], style=TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')])))
+    b_table = Table(b_rows, colWidths=[W*0.32, W*0.68])
+    b_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    story.append(b_table)
 
     doc.build(story)
     buf.seek(0)
     return buf, invoice_no
 
 # ==========================================
-# 3. UI 界面
+# 3. Streamlit UI
 # ==========================================
-st.set_page_config(page_title="HYV Invoice Pro", layout="wide")
-
 if 'inv_rows' not in st.session_state:
     st.session_state['inv_rows'] = [{"desc": "", "qty": 1.0, "price": 0.0}]
 
@@ -156,58 +194,43 @@ def add_row(): st.session_state['inv_rows'].append({"desc": "", "qty": 1.0, "pri
 def del_row(): 
     if len(st.session_state['inv_rows']) > 1: st.session_state['inv_rows'].pop()
 
-st.title("📑 发票自动化生成系统")
-
 scene = st.radio("业务场景：", ["Bill To HYV", "Bill From HYV"], horizontal=True)
 
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("甲方 (From) *")
-    if scene == "Bill From HYV":
-        f_name = st.text_input("Name", HYV_DETAILS["name"], key="f_hyv_n")
-        f_addr = st.text_area("Address", HYV_DETAILS["address"], key="f_hyv_a")
-    else:
-        f_name = st.text_input("Name", "", placeholder="必填：您的公司名称", key="f_cust_n")
-        f_addr = st.text_area("Address", "", placeholder="必填：您的详细地址", key="f_cust_a")
-
+    f_name = st.text_input("Name", HYV_DETAILS["name"] if scene == "Bill From HYV" else "", key="f_n")
+    f_addr = st.text_area("Address", HYV_DETAILS["address"] if scene == "Bill From HYV" else "", key="f_a")
 with col2:
     st.subheader("乙方 (Bill To) *")
-    if scene == "Bill To HYV":
-        t_name = st.text_input("Customer Name", HYV_DETAILS["name"], key="t_hyv_n")
-        t_addr = st.text_area("Customer Address", HYV_DETAILS["address"], key="ta_hyv")
-    else:
-        t_name = st.text_input("Customer Name", "", placeholder="必填：客户公司名称", key="t_cust_n")
-        t_addr = st.text_area("Customer Address", "", placeholder="必填：客户详细地址", key="ta_cust_a")
+    t_name = st.text_input("Customer Name", HYV_DETAILS["name"] if scene == "Bill To HYV" else "", key="t_n")
+    t_addr = st.text_area("Customer Address", HYV_DETAILS["address"] if scene == "Bill To HYV" else "", key="t_a")
 
 st.divider()
 st.subheader("📦 费用明细 *")
 for i, row in enumerate(st.session_state['inv_rows']):
     c1, c2, c3 = st.columns([3, 1, 1])
-    st.session_state['inv_rows'][i]["desc"] = c1.text_input(f"描述 #{i+1}", value=row["desc"], key=f"row_desc_{i}")
-    st.session_state['inv_rows'][i]["qty"] = c2.number_input(f"数量", value=float(row["qty"]), min_value=0.01, key=f"row_qty_{i}")
-    st.session_state['inv_rows'][i]["price"] = c3.number_input(f"单价", value=float(row["price"]), min_value=0.0, key=f"row_price_{i}")
+    st.session_state['inv_rows'][i]["desc"] = c1.text_input(f"描述 #{i+1}", value=row["desc"], key=f"d_{i}")
+    st.session_state['inv_rows'][i]["qty"] = c2.number_input(f"数量", value=float(row["qty"]), min_value=0.01, key=f"q_{i}")
+    st.session_state['inv_rows'][i]["price"] = c3.number_input(f"单价", value=float(row["price"]), min_value=0.0, key=f"p_{i}")
 
-col_btn1, col_btn2, _ = st.columns([1, 1, 5])
-col_btn1.button("➕ 添加行", on_click=add_row)
-col_btn2.button("➖ 减少行", on_click=del_row)
+st.button("➕ 添加行", on_click=add_row)
+st.button("➖ 减少行", on_click=del_row)
 
 st.divider()
-st.subheader("🏦 收款信息与条款 *")
+st.subheader("🏦 条款与银行 *")
 b_col1, b_col2 = st.columns(2)
-terms = b_col1.text_input("支付条款 (Terms)", "Net 45 Days")
-due_date = b_col1.text_input("截止日期 (Due Date)", (datetime.date.today() + datetime.timedelta(days=45)).strftime("%Y-%m-%d"))
-
-b_name = b_col2.text_input("Account Name (必填)")
-b_acc = b_col2.text_input("Account Number (必填)")
-b_bank = b_col1.text_input("Bank Name (必填)")
-b_swift = b_col2.text_input("SWIFT Code (必填)")
-b_addr = st.text_area("Bank Address (必填)")
+terms = b_col1.text_input("Terms", "Net 45 Days")
+due_date = b_col1.text_input("Due Date", (datetime.date.today() + datetime.timedelta(days=45)).strftime("%Y-%m-%d"))
+b_name = b_col2.text_input("Account Name")
+b_acc = b_col2.text_input("Account Number")
+b_bank = b_col1.text_input("Bank Name")
+b_swift = b_col2.text_input("SWIFT Code")
+b_addr = st.text_area("Bank Address")
 
 if st.button("🚀 生成 PDF", type="primary", use_container_width=True):
     if not f_name or not f_addr or not t_name or not t_addr or not b_name or not b_acc:
-        st.error("❌ 错误：所有带 * 的字段均为必填项！")
-    elif any(not row["desc"] for row in st.session_state['inv_rows']):
-        st.error("❌ 错误：费用明细描述不能为空！")
+        st.error("❌ 错误：带 * 的内容不能为空。")
     else:
         payload = {
             "from_name": f_name, "from_addr": f_addr, "to_name": t_name, "to_addr": t_addr,
@@ -216,5 +239,5 @@ if st.button("🚀 生成 PDF", type="primary", use_container_width=True):
             "items": st.session_state['inv_rows']
         }
         buf, name = generate_pdf(payload)
-        st.success(f"✅ 发票 {name} 已就绪！")
-        st.download_button("📥 点击下载 PDF", data=buf, file_name=f"{name}.pdf", mime="application/pdf")
+        st.success(f"发票 {name} 已生成。")
+        st.download_button("📥 下载文件", data=buf, file_name=f"{name}.pdf", mime="application/pdf")
