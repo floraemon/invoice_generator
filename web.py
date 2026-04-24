@@ -109,7 +109,7 @@ def add_row(): st.session_state['inv_rows'].append({"desc": "", "qty": 1.0, "pri
 def del_row(): 
     if len(st.session_state['inv_rows']) > 1: st.session_state['inv_rows'].pop()
 
-st.title("📑 HoYoverse 往来账单管理系统")
+st.title("📑 线上开票系统")
 
 # 场景一键切换
 scene = st.radio("业务方向：", ["Bill To HoYoverse", "Bill From HoYoverse"], horizontal=True)
