@@ -8,7 +8,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_RIGHT, TA_LEFT
 
 # ==========================================
-# 0. 身份验证逻辑
+# 0. 身份验证
 # ==========================================
 def check_password():
     def password_entered():
@@ -17,7 +17,6 @@ def check_password():
             del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
-
     if "password_correct" not in st.session_state:
         st.title("🔒 财务系统访问控制")
         st.text_input("请输入访问密码", type="password", on_change=password_entered, key="password")
@@ -41,7 +40,7 @@ HYV_DETAILS = {
 }
 
 # ==========================================
-# 2. PDF 渲染函数
+# 2. PDF 渲染函数 (修复对齐问题)
 # ==========================================
 def generate_pdf(data):
     items = data.get("items", [])
@@ -57,6 +56,7 @@ def generate_pdf(data):
     def style(name="Normal", **kw):
         return ParagraphStyle(name + str(id(kw)), parent=styles[name], **kw)
 
+    # 样式定义
     s_title = style(fontSize=26, textColor=colors.HexColor("#4472C4"), leading=32)
     s_label = style(fontSize=8,  textColor=colors.HexColor("#888888"), leading=11)
     s_bold  = style(fontSize=10, textColor=colors.HexColor("#222222"), leading=14, fontName="Helvetica-Bold")
@@ -70,6 +70,8 @@ def generate_pdf(data):
     s_small  = style(fontSize=8,  textColor=colors.HexColor("#888888"), leading=12)
 
     story = []
+    
+    # 1. Header
     header_data = [[
         Paragraph("INVOICE", s_title),
         Table([
@@ -79,16 +81,24 @@ def generate_pdf(data):
             [Paragraph("Terms", s_label),        Paragraph(data.get("terms", "-"), s_td)],
         ], colWidths=[30*mm, 48*mm])
     ]]
-    story.append(Table(header_data, colWidths=[W*0.5, W*0.5]))
+    story.append(Table(header_data, colWidths=[W*0.5, W*0.5], style=TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')])))
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#4472C4"), spaceAfter=10))
 
+    # 2. FROM / BILL TO (修复对齐的核心代码)
+    # 使用两列并设置 VALIGN='TOP' 确保 FROM 和 BILL TO 顶部对齐
     party_data = [[
-        [Paragraph("FROM", s_bank_h), Paragraph(data.get("from_name", ""), s_bold), Paragraph(data.get("from_addr", ""), s_small)],
-        [Paragraph("BILL TO", s_bank_h), Paragraph(data.get("to_name", ""), s_bold), Paragraph(data.get("to_addr", ""), s_small)],
+        [Paragraph("FROM", s_bank_h), Spacer(1, 2), Paragraph(data.get("from_name", ""), s_bold), Paragraph(data.get("from_addr", ""), s_small)],
+        [Paragraph("BILL TO", s_bank_h), Spacer(1, 2), Paragraph(data.get("to_name", ""), s_bold), Paragraph(data.get("to_addr", ""), s_small)],
     ]]
-    story.append(Table(party_data, colWidths=[W*0.5, W*0.5]))
-    story.append(Spacer(1, 10))
+    party_table = Table(party_data, colWidths=[W*0.5, W*0.5])
+    party_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),    # 确保文字顶部对齐
+        ('LEFTPADDING', (0,0), (-1,-1), 0),   # 取消左边距，确保靠最左对齐
+    ]))
+    story.append(party_table)
+    story.append(Spacer(1, 15))
 
+    # 3. Items Table
     table_data = [[Paragraph("#", s_th), Paragraph("Description", s_th), Paragraph("Qty", s_th), Paragraph("Unit Price", s_th), Paragraph("Amount", s_th)]]
     total_amt = 0
     for idx, item in enumerate(items, 1):
@@ -102,11 +112,22 @@ def generate_pdf(data):
         ("GRID", (0,1), (-1,-1), 0.3, colors.HexColor("#DDDDDD")),
         ("ALIGN", (2,0), (-1,-1), "RIGHT"),
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+        ("TOPPADDING", (0,0), (-1,-1), 6),
     ])))
     
+    # 4. Total
     story.append(Spacer(1, 6))
-    story.append(Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total_amt:,.2f}", s_tot_r)]], colWidths=[W*0.75, W*0.25], style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEF2FF"))])))
+    story.append(Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total_amt:,.2f}", s_tot_r)]], 
+                       colWidths=[W*0.75, W*0.25], 
+                       style=TableStyle([
+                           ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEF2FF")),
+                           ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                           ("TOPPADDING", (0,0), (-1,-1), 8),
+                           ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+                       ])))
 
+    # 5. Banking Information
     story.append(Spacer(1, 14))
     story.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#CCCCCC"), spaceAfter=8))
     story.append(Paragraph("Banking Information", s_bank_h))
@@ -115,14 +136,14 @@ def generate_pdf(data):
         ("Bank Name", data.get("b_bank", "")), ("SWIFT Code", data.get("b_swift", "")), ("Bank Address", data.get("b_addr", ""))
     ]
     bank_data = [[Paragraph(k, s_label), Paragraph(v, s_bank)] for k, v in bank_info]
-    story.append(Table(bank_data, colWidths=[W*0.32, W*0.68]))
+    story.append(Table(bank_data, colWidths=[W*0.32, W*0.68], style=TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')])))
 
     doc.build(story)
     buf.seek(0)
     return buf, invoice_no
 
 # ==========================================
-# 3. Streamlit 页面逻辑
+# 3. Streamlit UI
 # ==========================================
 st.set_page_config(page_title="Invoice Master", layout="wide")
 
@@ -135,7 +156,6 @@ def del_row():
 
 st.title("📑 财务开票系统 (合规版)")
 
-# 场景一键切换
 scene = st.radio("业务场景：", ["Bill To HYV", "Bill From HYV"], horizontal=True)
 
 col1, col2 = st.columns(2)
@@ -161,7 +181,7 @@ st.divider()
 st.subheader("📦 费用明细 *")
 for i, row in enumerate(st.session_state['inv_rows']):
     c1, c2, c3 = st.columns([3, 1, 1])
-    st.session_state['inv_rows'][i]["desc"] = c1.text_input(f"描述 #{i+1}", value=row["desc"], key=f"row_desc_{i}", placeholder="项目描述")
+    st.session_state['inv_rows'][i]["desc"] = c1.text_input(f"描述 #{i+1}", value=row["desc"], key=f"row_desc_{i}")
     st.session_state['inv_rows'][i]["qty"] = c2.number_input(f"数量", value=float(row["qty"]), min_value=0.01, key=f"row_qty_{i}")
     st.session_state['inv_rows'][i]["price"] = c3.number_input(f"单价", value=float(row["price"]), min_value=0.0, key=f"row_price_{i}")
 
@@ -172,7 +192,6 @@ col_b2.button("➖ 删除行", on_click=del_row)
 st.divider()
 st.subheader("🏦 收款信息与条款 *")
 b_col1, b_col2 = st.columns(2)
-# Terms 改为默认 45，由于 Due Date 依赖 Terms，这里也做了相应的逻辑处理
 terms = b_col1.text_input("支付条款 (Terms)", "Net 45 Days")
 due_date = b_col1.text_input("截止日期 (Due Date)", (datetime.date.today() + datetime.timedelta(days=45)).strftime("%Y-%m-%d"))
 
@@ -182,17 +201,13 @@ b_bank = b_col1.text_input("Bank Name (必填)")
 b_swift = b_col2.text_input("SWIFT Code (必填)")
 b_addr = st.text_area("Bank Address (必填)")
 
-# --- 验证逻辑 ---
 if st.button("🚀 生成并预览 PDF", type="primary", use_container_width=True):
-    # 1. 检查基本信息
     if not f_name or not f_addr or not t_name or not t_addr:
         st.error("❌ 错误：甲方或乙方的名称和地址不能为空！")
-    # 2. 检查银行信息
     elif not b_name or not b_acc or not b_bank or not b_swift or not b_addr:
-        st.error("❌ 错误：银行收款信息（所有字段）均为必填项！")
-    # 3. 检查明细项
+        st.error("❌ 错误：银行收款信息均为必填项！")
     elif any(not row["desc"] for row in st.session_state['inv_rows']):
-        st.error("❌ 错误：费用明细中的“描述”不能为空！")
+        st.error("❌ 错误：费用明细中的描述不能为空！")
     else:
         pdf_payload = {
             "from_name": f_name, "from_addr": f_addr,
@@ -202,5 +217,5 @@ if st.button("🚀 生成并预览 PDF", type="primary", use_container_width=Tru
             "items": st.session_state['inv_rows'], "currency": "USD"
         }
         buf, name = generate_pdf(pdf_payload)
-        st.success(f"✅ 合规检查通过！发票 {name} 已生成。")
+        st.success(f"✅ 发票 {name} 已生成。")
         st.download_button("📥 下载 PDF", data=buf, file_name=f"{name}.pdf", mime="application/pdf")
