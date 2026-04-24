@@ -10,7 +10,7 @@ from reportlab.lib.enums import TA_RIGHT, TA_LEFT
 # --- 1. HoYoverse 预设信息 ---
 HYV_DETAILS = {
     "name": "HoYoverse Pte. Ltd.",
-    "address": "12/F, North Bridge Road, Singapore" # 建议此处根据实际需求细化
+    "address": "1 One-North Crescent, #06-01/02, Razer Sea HQ, Singapore 138538" # 建议此处根据实际需求细化
 }
 
 # --- 2. 核心 PDF 渲染 (100% 还原原版 Flask 逻辑与列宽) ---
