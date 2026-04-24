@@ -8,28 +8,25 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_RIGHT, TA_LEFT
 
 # ==========================================
-# 0. 审计日志与身份校验逻辑
+# 0. 审计日志与身份校验逻辑 (含 Flora 专属日志入口)
 # ==========================================
 def write_audit_log(visitor):
     """
-    核心优化：此函数会将记录打印到 Streamlit Cloud 的后台日志中
-    你可以在 Manage App -> Logs 看到这些黑窗口文字
+    后台静默打印，只有你在 Streamlit Cloud 后台黑窗口能实时看到。
     """
-    # 获取新加坡时间 (假设服务器时间可能不同，直接用本地格式)
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-    
     log_msg = f"[{timestamp}] 登录成功: 用户 -> {visitor}"
     
-    # 1. 打印到后台黑窗口 (你要求的“打印日志”命令)
+    # 1. 打印到控制台 (管理员后台可见)
     print(log_msg) 
     
-    # 2. 写入本地文件作为备份
+    # 2. 写入本地备份文件
     try:
         with open("access_log.txt", "a", encoding="utf-8") as f:
             f.write(log_msg + "\n")
     except:
-        pass # 防止环境权限问题导致崩溃
+        pass
 
 def check_manual_auth():
     if "auth_success" not in st.session_state:
@@ -43,45 +40,44 @@ def check_manual_auth():
     st.markdown("---")
     
     # 登录表单
-    with st.container():
-        reg_name = st.text_input("请输入您的姓名 / 办公邮箱 (必填)", placeholder="例如: Zhang San")
-        reg_password = st.text_input("访问密码", type="password")
+    reg_name = st.text_input("请输入您的姓名 / 办公邮箱 (必填)", placeholder="例如: Zhang San")
+    reg_password = st.text_input("访问密码", type="password")
+    
+    if st.button("进入系统", use_container_width=True, type="primary"):
+        system_password = st.secrets.get("password", "")
         
-        if st.button("进入系统", use_container_width=True, type="primary"):
-            system_password = st.secrets.get("password", "")
-            
-            if not reg_name:
-                st.error("❌ 审计要求：请先登记您的身份。")
-            elif reg_password != system_password:
-                st.error("❌ 密码错误。")
-            else:
-                # 记录成功登录
-                write_audit_log(reg_name)
-                st.session_state["auth_success"] = True
-                st.session_state["visitor_name"] = reg_name
-                st.rerun()
+        if not reg_name:
+            st.error("❌ 审计要求：请先登记您的身份。")
+        elif reg_password != system_password:
+            st.error("❌ 密码错误。")
+        else:
+            write_audit_log(reg_name)
+            st.session_state["auth_success"] = True
+            st.session_state["visitor_name"] = reg_name
+            st.rerun()
     return False
 
 # 执行拦截逻辑
 if not check_manual_auth():
     st.stop()
 
-# 侧边栏常驻显示
+# --- 侧边栏专属审计模块 ---
 st.sidebar.markdown(f"**👤 当前操作员:**\n{st.session_state['visitor_name']}")
+
+# 只有输入Flora的专属指令才会显示历史记录（暗号可以自行在下方代码修改）
+admin_command = st.sidebar.text_input("🔑 Admin Entry", type="password", help="仅供管理员 Flora 审计使用")
+if admin_command == "FLORA_LOG_2026": 
+    st.sidebar.markdown("### 历史访问记录")
+    if os.path.exists("access_log.txt"):
+        with open("access_log.txt", "r", encoding="utf-8") as f:
+            logs = f.read()
+            st.sidebar.text_area("Logs Data", logs, height=300)
+    else:
+        st.sidebar.caption("暂无历史记录")
+
 if st.sidebar.button("登出系统"):
     st.session_state["auth_success"] = False
     st.rerun()
-
-# 管理员秘密开关
-if st.sidebar.checkbox("显示最近访问历史"):
-    if os.path.exists("access_log.txt"):
-        with open("access_log.txt", "r", encoding="utf-8") as f:
-            lines = f.readlines()
-            # 只显示最近 10 条，避免刷屏
-            for line in lines[-10:]:
-                st.sidebar.caption(line.strip())
-    else:
-        st.sidebar.caption("暂无历史记录")
 
 # ==========================================
 # 1. 业务配置 (HYV)
@@ -135,7 +131,7 @@ def generate_pdf(data):
     story.append(h_table)
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#4472C4"), spaceAfter=10))
 
-    # From/To (修复对齐)
+    # From/To (水平对齐)
     p_table = Table([[
         [Paragraph("FROM", s_bank_h), Spacer(1, 2), Paragraph(data.get("from_name", ""), s_bold), Paragraph(data.get("from_addr", ""), s_small)],
         [Paragraph("BILL TO", s_bank_h), Spacer(1, 2), Paragraph(data.get("to_name", ""), s_bold), Paragraph(data.get("to_addr", ""), s_small)],
@@ -162,13 +158,13 @@ def generate_pdf(data):
     ]))
     story.append(main_table)
     
-    # 总计栏
+    # 总计
     story.append(Spacer(1, 6))
     tot_table = Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total:,.2f}", s_tot_r)]], colWidths=[W*0.75, W*0.25])
     tot_table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEF2FF")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 8), ("BOTTOMPADDING", (0,0), (-1,-1), 8)]))
     story.append(tot_table)
 
-    # 银行信息
+    # 银行
     story.append(Spacer(1, 14))
     story.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#CCCCCC"), spaceAfter=8))
     story.append(Paragraph("Banking Information", s_bank_h))
@@ -185,7 +181,7 @@ def generate_pdf(data):
     return buf, invoice_no
 
 # ==========================================
-# 3. Streamlit UI
+# 3. 业务逻辑
 # ==========================================
 if 'inv_rows' not in st.session_state:
     st.session_state['inv_rows'] = [{"desc": "", "qty": 1.0, "price": 0.0}]
@@ -230,7 +226,7 @@ b_addr = st.text_area("Bank Address")
 
 if st.button("🚀 生成 PDF", type="primary", use_container_width=True):
     if not f_name or not f_addr or not t_name or not t_addr or not b_name or not b_acc:
-        st.error("❌ 错误：带 * 的内容不能为空。")
+        st.error("❌ 错误：请填写必填项。")
     else:
         payload = {
             "from_name": f_name, "from_addr": f_addr, "to_name": t_name, "to_addr": t_addr,
@@ -239,5 +235,5 @@ if st.button("🚀 生成 PDF", type="primary", use_container_width=True):
             "items": st.session_state['inv_rows']
         }
         buf, name = generate_pdf(payload)
-        st.success(f"发票 {name} 已生成。")
-        st.download_button("📥 下载文件", data=buf, file_name=f"{name}.pdf", mime="application/pdf")
+        st.success(f"已就绪！")
+        st.download_button("📥 下载 PDF", data=buf, file_name=f"{name}.pdf", mime="application/pdf")
