@@ -7,11 +7,16 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_RIGHT, TA_LEFT
 
-# --- 1. 完全还原你最初代码中的 PDF 渲染逻辑 ---
+# --- 1. 预设 HoYoverse 信息 ---
+HYV_INFO = {
+    "name": "HoYoverse Pte. Ltd.",
+    "address": "Singapore (HQ), North Bridge Road" # 你可以在这里修改为精确地址
+}
+
+# --- 2. 核心 PDF 渲染函数 (严格遵循原 Flask 逻辑) ---
 def generate_pdf(data):
     items = data.get("items", [])
     currency = data.get("currency", "USD")
-    # 生成发票号和日期（原代码逻辑）
     invoice_no = "INV-" + datetime.datetime.now().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:5].upper()
     invoice_date = datetime.datetime.now().strftime("%Y-%m-%d")
     
@@ -20,13 +25,12 @@ def generate_pdf(data):
     styles = getSampleStyleSheet()
     W = A4[0] - 36*mm
 
-    # 样式定义 (100% 还原原代码中的样式名和参数)
     def style(name="Normal", **kw):
         return ParagraphStyle(name + str(id(kw)), parent=styles[name], **kw)
 
+    # 还原原版样式
     s_title = style(fontSize=26, textColor=colors.HexColor("#4472C4"), leading=32)
     s_label = style(fontSize=8,  textColor=colors.HexColor("#888888"), leading=11)
-    s_value = style(fontSize=10, textColor=colors.HexColor("#222222"), leading=14)
     s_bold  = style(fontSize=10, textColor=colors.HexColor("#222222"), leading=14, fontName="Helvetica-Bold")
     s_th    = style(fontSize=9,  textColor=colors.white, fontName="Helvetica-Bold", leading=12)
     s_td    = style(fontSize=9,  textColor=colors.HexColor("#333333"), leading=12)
@@ -38,21 +42,20 @@ def generate_pdf(data):
     s_small  = style(fontSize=8,  textColor=colors.HexColor("#888888"), leading=12)
 
     story = []
-    
-    # Header (还原原代码布局)
+    # Header
     header_data = [[
         Paragraph("INVOICE", s_title),
         Table([
             [Paragraph("Invoice No.", s_label),  Paragraph(invoice_no, s_bold)],
-            [Paragraph("Invoice Date", s_label), Paragraph(invoice_date, s_value)],
-            [Paragraph("Due Date", s_label),     Paragraph(data.get("due_date", "-"), s_value)],
-            [Paragraph("Terms", s_label),        Paragraph(data.get("terms", "-"), s_value)],
+            [Paragraph("Invoice Date", s_label), Paragraph(invoice_date, s_value if 's_value' in locals() else s_td)],
+            [Paragraph("Due Date", s_label),     Paragraph(data.get("due_date", "-"), s_td)],
+            [Paragraph("Terms", s_label),        Paragraph(data.get("terms", "-"), s_td)],
         ], colWidths=[30*mm, 48*mm])
     ]]
     story.append(Table(header_data, colWidths=[W*0.5, W*0.5]))
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#4472C4"), spaceAfter=10))
 
-    # FROM / BILL TO
+    # Bill From / To
     party_data = [[
         [Paragraph("FROM", s_bank_h), Paragraph(data.get("issuer_name", ""), s_bold), Paragraph(data.get("issuer_address", ""), s_small)],
         [Paragraph("BILL TO", s_bank_h), Paragraph(data.get("recipient_name", ""), s_bold), Paragraph(data.get("recipient_address", ""), s_small)],
@@ -60,7 +63,7 @@ def generate_pdf(data):
     story.append(Table(party_data, colWidths=[W*0.5, W*0.5]))
     story.append(Spacer(1, 10))
 
-    # 明细表 (原代码 colWidths: [5%, 45%, 12%, 18%, 20%])
+    # Items Table (列宽比例 5%, 45%, 12%, 18%, 20%)
     table_data = [[Paragraph("#", s_th), Paragraph("Description", s_th), Paragraph("Qty", s_th), Paragraph(f"Unit Price", s_th), Paragraph(f"Amount", s_th)]]
     total_amt = 0
     for idx, item in enumerate(items, 1):
@@ -75,75 +78,81 @@ def generate_pdf(data):
         ("ALIGN", (2,0), (-1,-1), "RIGHT"),
     ])))
     
-    # Total
+    # Total & Bank Info (保持原版逻辑)
     story.append(Spacer(1, 6))
-    story.append(Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total_amt:,.2f}", s_tot_r)]], colWidths=[W*0.75, W*0.25], 
-                       style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEF2FF"))])))
-
-    # 银行信息 (完全还原原代码底部样式)
+    story.append(Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total_amt:,.2f}", s_tot_r)]], colWidths=[W*0.75, W*0.25], style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEF2FF"))])))
     story.append(Spacer(1, 14))
     story.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#CCCCCC"), spaceAfter=8))
     story.append(Paragraph("Banking Information", s_bank_h))
-    bank_rows = [
-        ("Account Name", data.get("beneficiary_name", "")),
-        ("Account Number", data.get("bank_account", "")),
-        ("Bank Name", data.get("bank_name", "")),
-        ("SWIFT Code", data.get("swift_code", "")),
-        ("Bank Address", data.get("bank_addr", ""))
-    ]
-    bank_data = [[Paragraph(k, s_label), Paragraph(v, s_bank)] for k, v in bank_rows]
+    bank_data = [[Paragraph(k, s_label), Paragraph(v, s_bank)] for k, v in [
+        ("Account Name", data.get("b_name", "")), ("Account Number", data.get("b_acc", "")),
+        ("Bank Name", data.get("b_bank", "")), ("SWIFT Code", data.get("b_swift", "")), ("Bank Address", data.get("b_addr", ""))
+    ]]
     story.append(Table(bank_data, colWidths=[W*0.32, W*0.68]))
 
     doc.build(story)
     buf.seek(0)
     return buf, invoice_no
 
-# --- 2. 网页界面布局 ---
-st.set_page_config(page_title="Professional Invoice Gen", layout="wide")
-st.title("📑 发票生成系统")
+# --- 3. 网页主程序 (含动态加行与场景切换) ---
+st.set_page_config(page_title="HYV Invoice Tool", layout="wide")
 
-# 分栏填写基本信息
+# 初始化 Session State
+if 'items' not in st.session_state:
+    st.session_state.items = [{"desc": "", "qty": 1.0, "price": 0.0}]
+
+# 操作函数
+def add_row(): st.session_state.items.append({"desc": "", "qty": 1.0, "price": 0.0})
+def del_row(): 
+    if len(st.session_state.items) > 1: st.session_state.items.pop()
+
+st.title("📑 HoYoverse 往来账单生成器")
+
+# 场景选择
+scene = st.radio("选择业务场景：", ["Bill To HoYoverse (向 HYV 请款)", "Bill From HoYoverse (由 HYV 开票)"], horizontal=True)
+
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("甲方信息 (From)")
-    issuer_name = st.text_input("您的名称", "Issuer Company Ltd")
-    issuer_address = st.text_area("您的地址", "Singapore Address")
-    terms = st.text_input("支付条款", "Net 30")
+    if scene == "Bill From HoYoverse (由 HYV 开票)":
+        i_name = st.text_input("名称", HYV_INFO["name"])
+        i_addr = st.text_area("地址", HYV_INFO["address"])
+    else:
+        i_name = st.text_input("名称", "Your Company Name")
+        i_addr = st.text_area("地址", "Your Local Address")
 with col2:
-    st.subheader("乙方信息 (Bill To)")
-    recipient_name = st.text_input("客户名称", "Client Name")
-    recipient_address = st.text_area("客户地址", "Global Avenue, USA")
-    due_date = st.text_input("截止日期", "2026-05-24")
+    st.subheader("乙方信息 (To)")
+    if scene == "Bill To HoYoverse (向 HYV 请款)":
+        r_name = st.text_input("客户名称", HYV_INFO["name"])
+        r_addr = st.text_area("客户地址", HYV_INFO["address"])
+    else:
+        r_name = st.text_input("客户名称", "Client Name")
+        r_addr = st.text_area("客户地址", "Client Address")
 
 st.divider()
-st.subheader("📦 发票明细")
-items_to_send = []
-# 预设 5 行以保证稳定性，不使用动态 session 状态
-for i in range(5):
+st.subheader("📦 费用明细")
+for i, item in enumerate(st.session_state.items):
     c1, c2, c3 = st.columns([3, 1, 1])
-    d = c1.text_input(f"描述 #{i+1}", key=f"d_{i}")
-    q = c2.number_input(f"数量", value=1.0, key=f"q_{i}")
-    p = c3.number_input(f"单价", value=0.0, key=f"p_{i}")
-    if d: items_to_send.append({"desc": d, "qty": q, "price": p})
+    st.session_state.items[i]["desc"] = c1.text_input(f"描述 #{i+1}", value=item["desc"], key=f"d{i}")
+    st.session_state.items[i]["qty"] = c2.number_input(f"数量", value=float(item["qty"]), key=f"q{i}")
+    st.session_state.items[i]["price"] = c3.number_input(f"单价", value=float(item["price"]), key=f"p{i}")
+
+c1, c2, _ = st.columns([1, 1, 3])
+c1.button("➕ 添加行", on_click=add_row)
+c2.button("➖ 减少行", on_click=del_row)
 
 st.divider()
-st.subheader("🏦 银行收款信息")
+st.subheader("🏦 收款银行信息")
 b1, b2 = st.columns(2)
-beneficiary_name = b1.text_input("收款人全称")
-bank_account = b1.text_input("银行账号")
-bank_name = b2.text_input("银行名称")
-swift_code = b2.text_input("SWIFT Code")
-bank_addr = b2.text_area("银行地址")
+bank_payload = {
+    "b_name": b1.text_input("Beneficiary Name"), "b_acc": b1.text_input("Account Number"),
+    "b_bank": b2.text_input("Bank Name"), "b_swift": b2.text_input("SWIFT Code"), "b_addr": b2.text_area("Bank Address")
+}
 
-if st.button("🚀 生成 PDF", type="primary"):
-    payload = {
-        "issuer_name": issuer_name, "issuer_address": issuer_address,
-        "recipient_name": recipient_name, "recipient_address": recipient_address,
-        "terms": terms, "due_date": due_date,
-        "beneficiary_name": beneficiary_name, "bank_account": bank_account,
-        "bank_name": bank_name, "swift_code": swift_code, "bank_addr": bank_addr,
-        "items": items_to_send, "currency": "USD"
-    }
-    buf, name = generate_pdf(payload)
-    st.success(f"发票 {name} 已就绪")
-    st.download_button("📥 下载发票", data=buf, file_name=f"{name}.pdf", mime="application/pdf")
+if st.button("🚀 生成 PDF", type="primary", use_container_width=True):
+    full_data = {**bank_payload, "issuer_name": i_name, "issuer_address": i_addr, 
+                 "recipient_name": r_name, "recipient_address": r_addr, 
+                 "items": st.session_state.items, "currency": "USD"}
+    buf, name = generate_pdf(full_data)
+    st.success(f"发票已生成！")
+    st.download_button("📥 下载文件", data=buf, file_name=f"{name}.pdf", mime="application/pdf")
