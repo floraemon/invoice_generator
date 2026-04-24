@@ -8,20 +8,13 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_RIGHT, TA_LEFT
 
 # ==========================================
-# 0. 审计日志与身份校验逻辑 (含 Flora 专属日志入口)
+# 0. 审计日志与身份校验逻辑
 # ==========================================
 def write_audit_log(visitor):
-    """
-    后台静默打印，只有你在 Streamlit Cloud 后台黑窗口能实时看到。
-    """
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     log_msg = f"[{timestamp}] 登录成功: 用户 -> {visitor}"
-    
-    # 1. 打印到控制台 (管理员后台可见)
     print(log_msg) 
-    
-    # 2. 写入本地备份文件
     try:
         with open("access_log.txt", "a", encoding="utf-8") as f:
             f.write(log_msg + "\n")
@@ -38,14 +31,11 @@ def check_manual_auth():
 
     st.title("🛡️ 财务系统访问审计")
     st.markdown("---")
-    
-    # 登录表单
     reg_name = st.text_input("请输入您的姓名 / 办公邮箱 (必填)", placeholder="例如: Zhang San")
     reg_password = st.text_input("访问密码", type="password")
     
     if st.button("进入系统", use_container_width=True, type="primary"):
         system_password = st.secrets.get("password", "")
-        
         if not reg_name:
             st.error("❌ 审计要求：请先登记您的身份。")
         elif reg_password != system_password:
@@ -57,30 +47,24 @@ def check_manual_auth():
             st.rerun()
     return False
 
-# 执行拦截逻辑
 if not check_manual_auth():
     st.stop()
 
 # --- 侧边栏专属审计模块 ---
 st.sidebar.markdown(f"**👤 当前操作员:**\n{st.session_state['visitor_name']}")
-
-# 只有输入Flora的专属指令才会显示历史记录（暗号可以自行在下方代码修改）
-admin_command = st.sidebar.text_input("🔑 Admin Entry", type="password", help="仅供管理员 Flora 审计使用")
-if admin_command == "831228": 
+admin_command = st.sidebar.text_input("🔑 Admin Entry", type="password")
+if admin_command == "FLORA_LOG_2026": # 这里修改你的暗号
     st.sidebar.markdown("### 历史访问记录")
     if os.path.exists("access_log.txt"):
         with open("access_log.txt", "r", encoding="utf-8") as f:
-            logs = f.read()
-            st.sidebar.text_area("Logs Data", logs, height=300)
-    else:
-        st.sidebar.caption("暂无历史记录")
+            st.sidebar.text_area("Logs Data", f.read(), height=300)
 
 if st.sidebar.button("登出系统"):
     st.session_state["auth_success"] = False
     st.rerun()
 
 # ==========================================
-# 1. 业务配置 (HYV)
+# 1. 业务配置 (HYV 官方法定资料)
 # ==========================================
 HYV_DETAILS = {
     "name": "HoYoverse Pte. Ltd.",
@@ -95,7 +79,6 @@ def generate_pdf(data):
     currency = "USD"
     invoice_no = "INV-" + datetime.datetime.now().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:5].upper()
     invoice_date = datetime.datetime.now().strftime("%Y-%m-%d")
-    
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18*mm, rightMargin=18*mm, topMargin=16*mm, bottomMargin=16*mm)
     styles = getSampleStyleSheet()
@@ -116,31 +99,16 @@ def generate_pdf(data):
     s_tot_r = style(fontSize=13, textColor=colors.HexColor("#4472C4"), fontName="Helvetica-Bold", leading=16, alignment=TA_RIGHT)
 
     story = []
-    
-    # 头部表格
-    h_table = Table([[
-        Paragraph("INVOICE", s_title),
-        Table([
-            [Paragraph("Invoice No.", s_label),  Paragraph(invoice_no, s_bold)],
-            [Paragraph("Invoice Date", s_label), Paragraph(invoice_date, s_td)],
-            [Paragraph("Due Date", s_label),     Paragraph(data.get("due_date", "-"), s_td)],
-            [Paragraph("Terms", s_label),        Paragraph(data.get("terms", "-"), s_td)],
-        ], colWidths=[30*mm, 48*mm])
-    ]], colWidths=[W*0.5, W*0.5])
+    h_table = Table([[Paragraph("INVOICE", s_title), Table([[Paragraph("Invoice No.", s_label),  Paragraph(invoice_no, s_bold)], [Paragraph("Invoice Date", s_label), Paragraph(invoice_date, s_td)], [Paragraph("Due Date", s_label), Paragraph(data.get("due_date", "-"), s_td)], [Paragraph("Terms", s_label), Paragraph(data.get("terms", "-"), s_td)]], colWidths=[30*mm, 48*mm])]], colWidths=[W*0.5, W*0.5])
     h_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
     story.append(h_table)
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#4472C4"), spaceAfter=10))
 
-    # From/To (水平对齐)
-    p_table = Table([[
-        [Paragraph("FROM", s_bank_h), Spacer(1, 2), Paragraph(data.get("from_name", ""), s_bold), Paragraph(data.get("from_addr", ""), s_small)],
-        [Paragraph("BILL TO", s_bank_h), Spacer(1, 2), Paragraph(data.get("to_name", ""), s_bold), Paragraph(data.get("to_addr", ""), s_small)],
-    ]], colWidths=[W*0.5, W*0.5])
+    p_table = Table([[ [Paragraph("FROM", s_bank_h), Spacer(1, 2), Paragraph(data.get("from_name", ""), s_bold), Paragraph(data.get("from_addr", ""), s_small)], [Paragraph("BILL TO", s_bank_h), Spacer(1, 2), Paragraph(data.get("to_name", ""), s_bold), Paragraph(data.get("to_addr", ""), s_small)] ]], colWidths=[W*0.5, W*0.5])
     p_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0)]))
     story.append(p_table)
     story.append(Spacer(1, 15))
 
-    # 明细表
     t_data = [[Paragraph("#", s_th), Paragraph("Description", s_th), Paragraph("Qty", s_th), Paragraph("Unit Price", s_th), Paragraph("Amount", s_th)]]
     total = 0
     for idx, item in enumerate(items, 1):
@@ -150,39 +118,30 @@ def generate_pdf(data):
         t_data.append([str(idx), Paragraph(item.get("desc", ""), s_td), f"{q:g}", f"{p:,.2f}", f"{amt:,.2f}"])
 
     main_table = Table(t_data, colWidths=[W*0.05, W*0.45, W*0.12, W*0.18, W*0.20])
-    main_table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#4472C4")),
-        ("GRID", (0,1), (-1,-1), 0.3, colors.HexColor("#DDDDDD")),
-        ("ALIGN", (2,0), (-1,-1), "RIGHT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 6), ("TOPPADDING", (0,0), (-1,-1), 6),
-    ]))
+    main_table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#4472C4")), ("GRID", (0,1), (-1,-1), 0.3, colors.HexColor("#DDDDDD")), ("ALIGN", (2,0), (-1,-1), "RIGHT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("BOTTOMPADDING", (0,0), (-1,-1), 6), ("TOPPADDING", (0,0), (-1,-1), 6)]))
     story.append(main_table)
     
-    # 总计
     story.append(Spacer(1, 6))
     tot_table = Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total:,.2f}", s_tot_r)]], colWidths=[W*0.75, W*0.25])
     tot_table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEF2FF")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 8), ("BOTTOMPADDING", (0,0), (-1,-1), 8)]))
     story.append(tot_table)
 
-    # 银行
     story.append(Spacer(1, 14))
     story.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#CCCCCC"), spaceAfter=8))
     story.append(Paragraph("Banking Information", s_bank_h))
-    b_rows = [[Paragraph(k, s_label), Paragraph(v, s_bank)] for k, v in [
-        ("Account Name", data.get("b_name", "")), ("Account Number", data.get("b_acc", "")),
-        ("Bank Name", data.get("b_bank", "")), ("SWIFT Code", data.get("b_swift", "")), ("Bank Address", data.get("b_addr", ""))
-    ]]
+    b_rows = [[Paragraph(k, s_label), Paragraph(v, s_bank)] for k, v in [("Account Name", data.get("b_name", "")), ("Account Number", data.get("b_acc", "")), ("Bank Name", data.get("b_bank", "")), ("SWIFT Code", data.get("b_swift", "")), ("Bank Address", data.get("b_addr", ""))]]
     b_table = Table(b_rows, colWidths=[W*0.32, W*0.68])
     b_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
     story.append(b_table)
-
     doc.build(story)
     buf.seek(0)
     return buf, invoice_no
 
 # ==========================================
-# 3. 业务逻辑
+# 3. 页面布局与逻辑
 # ==========================================
+st.set_page_config(page_title="HYV Invoice Manager", layout="wide")
+
 if 'inv_rows' not in st.session_state:
     st.session_state['inv_rows'] = [{"desc": "", "qty": 1.0, "price": 0.0}]
 
@@ -190,17 +149,30 @@ def add_row(): st.session_state['inv_rows'].append({"desc": "", "qty": 1.0, "pri
 def del_row(): 
     if len(st.session_state['inv_rows']) > 1: st.session_state['inv_rows'].pop()
 
+st.title("📑 发票自动化生成系统")
+
+# 场景切换
 scene = st.radio("业务场景：", ["Bill To HYV", "Bill From HYV"], horizontal=True)
 
+# 关键修复：通过在 key 中引入 scene，强制 Streamlit 在切换场景时刷新输入框的值
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("甲方 (From) *")
-    f_name = st.text_input("Name", HYV_DETAILS["name"] if scene == "Bill From HYV" else "", key="f_n")
-    f_addr = st.text_area("Address", HYV_DETAILS["address"] if scene == "Bill From HYV" else "", key="f_a")
+    if scene == "Bill From HYV":
+        f_name = st.text_input("Name", value=HYV_DETAILS["name"], key=f"f_n_hyv_{scene}")
+        f_addr = st.text_area("Address", value=HYV_DETAILS["address"], key=f"f_a_hyv_{scene}")
+    else:
+        f_name = st.text_input("Name", value="", placeholder="您的公司名称", key=f"f_n_cust_{scene}")
+        f_addr = st.text_area("Address", value="", placeholder="您的详细地址", key=f"f_a_cust_{scene}")
+
 with col2:
     st.subheader("乙方 (Bill To) *")
-    t_name = st.text_input("Customer Name", HYV_DETAILS["name"] if scene == "Bill To HYV" else "", key="t_n")
-    t_addr = st.text_area("Customer Address", HYV_DETAILS["address"] if scene == "Bill To HYV" else "", key="t_a")
+    if scene == "Bill To HYV":
+        t_name = st.text_input("Customer Name", value=HYV_DETAILS["name"], key=f"t_n_hyv_{scene}")
+        t_addr = st.text_area("Customer Address", value=HYV_DETAILS["address"], key=f"t_a_hyv_{scene}")
+    else:
+        t_name = st.text_input("Customer Name", value="", placeholder="客户公司名称", key=f"t_n_cust_{scene}")
+        t_addr = st.text_area("Customer Address", value="", placeholder="客户详细地址", key=f"t_a_cust_{scene}")
 
 st.divider()
 st.subheader("📦 费用明细 *")
