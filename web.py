@@ -53,7 +53,7 @@ if not check_manual_auth():
 # --- 侧边栏专属审计模块 ---
 st.sidebar.markdown(f"**👤 当前操作员:**\n{st.session_state['visitor_name']}")
 admin_command = st.sidebar.text_input("🔑 Admin Entry", type="password")
-if admin_command == "FLORA_LOG_2026": # 这里修改你的暗号
+if admin_command == "831228": # 这里修改你的暗号
     st.sidebar.markdown("### 历史访问记录")
     if os.path.exists("access_log.txt"):
         with open("access_log.txt", "r", encoding="utf-8") as f:
