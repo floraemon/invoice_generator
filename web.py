@@ -117,7 +117,7 @@ scene = st.radio("业务方向：", ["Bill To HYV", "Bill From HYV"], horizontal
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("甲方 (From)")
-    if scene == "Bill From HoYoverse":
+    if scene == "Bill From HYV":
         f_name = st.text_input("Name", HYV_DETAILS["name"], key="fn_hyv")
         f_addr = st.text_area("Address", HYV_DETAILS["address"], key="fa_hyv")
     else:
@@ -126,7 +126,7 @@ with col1:
 
 with col2:
     st.subheader("乙方 (Bill To)")
-    if scene == "Bill To HoYoverse":
+    if scene == "Bill To HYV":
         t_name = st.text_input("Customer Name", HYV_DETAILS["name"], key="tn_hyv")
         t_addr = st.text_area("Customer Address", HYV_DETAILS["address"], key="ta_hyv")
     else:
