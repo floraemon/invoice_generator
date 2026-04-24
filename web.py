@@ -66,7 +66,7 @@ st.sidebar.markdown(f"**👤 当前操作员:**\n{st.session_state['visitor_name
 
 # 只有输入Flora的专属指令才会显示历史记录（暗号可以自行在下方代码修改）
 admin_command = st.sidebar.text_input("🔑 Admin Entry", type="password", help="仅供管理员 Flora 审计使用")
-if admin_command == "FLORA_LOG_2026": 
+if admin_command == "831228": 
     st.sidebar.markdown("### 历史访问记录")
     if os.path.exists("access_log.txt"):
         with open("access_log.txt", "r", encoding="utf-8") as f:
