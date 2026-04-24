@@ -97,106 +97,60 @@ def generate_pdf(data):
     # 4. Total (总额)
     story.append(Spacer(1, 10))
     story.append(Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total:,.2f}", s_tot_r)]], 
-                       colWidths=[W*0.75, W*0.25],
-                       style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#F3F6FF")), ("TOPPADDING", (0,0), (-1,-1), 8), ("BOTTOMPADDING", (0,0), (-1,-1), 8)])))
-    
-    # 5. Banking Information (银行信息)
-    story.append(Spacer(1, 20))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
-    story.append(Paragraph("Banking Information", s_bank_h))
-    story.append(Spacer(1, 5))
-    bank_info = [
-        f"<b>Beneficiary:</b> {data.get('beneficiary_name', '-')}",
-        f"<b>Account Number:</b> {data.get('bank_account_number', '-')}",
-        f"<b>Bank Name:</b> {data.get('bank_name', '-')}",
-        f"<b>SWIFT Code:</b> {data.get('swift_code', '-')}"
-    ]
-    for line in bank_info:
-        story.append(Paragraph(line, s_bank))
-
-    doc.build(story)
-    buf.seek(0)
-    return buf, invoice_no
-
-# --- Streamlit 界面逻辑 ---
-st.set_page_config(page_title="Professional Invoice Generator", layout="wide")
-
-# 初始化 Session State (防止报错的关键)
+    # --- 1. 顶部初始化（放在 st.title 之前最稳妥） ---
 if 'items' not in st.session_state:
-    st.session_state.items = [{"description": "", "quantity": 1, "unit_price": 0.0}]
+    st.session_state['items'] = [{"description": "", "quantity": 1.0, "unit_price": 0.0}]
 
 def add_item():
-    st.session_state.items.append({"description": "", "quantity": 1, "unit_price": 0.0})
+    st.session_state.items.append({"description": "", "quantity": 1.0, "unit_price": 0.0})
 
+# --- 2. 页面标题 ---
 st.title("📑 在线发票生成器")
-st.info("填写下方信息即可生成专业 PDF 发票。本工具由 Python & Streamlit 驱动。")
 
-# 第一部分：主体信息
-with st.container():
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("卖家信息 (From)")
-        issuer_name = st.text_input("公司/个人名称", "My Company Name")
-        issuer_address = st.text_area("详细地址", "123 Business Street, Singapore")
-    with col2:
-        st.subheader("买家信息 (Bill To)")
-        recipient_name = st.text_input("客户名称", "Client Company")
-        recipient_address = st.text_area("客户地址", "456 Client Avenue, Office 01")
+# --- 3. 卖家/买家信息 ---
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("卖家信息")
+    issuer_name = st.text_input("公司名称", "My Company")
+    issuer_address = st.text_area("地址", "Singapore")
+with col2:
+    st.subheader("买家信息")
+    recipient_name = st.text_input("客户名称", "Client Name")
+    recipient_address = st.text_area("客户地址", "Client Office")
 
-# 第二部分：明细信息
+# --- 4. 发票明细（核心修复区） ---
 st.markdown("---")
 st.subheader("📦 发票明细")
-for i, _ in enumerate(list(st.session_state.items)):
+
+# 使用 get 方法安全获取数据，如果不存在则返回空列表
+current_items = st.session_state.get('items', [])
+
+# 动态生成输入框
+for i, item in enumerate(current_items):
     c1, c2, c3 = st.columns([3, 1, 1])
-    st.session_state.items[i]["description"] = c1.text_input(f"项目描述 #{i+1}", key=f"desc_{i}")
-    st.session_state.items[i]["quantity"] = c2.number_input(f"数量", value=1.0, step=1.0, key=f"qty_{i}")
-    st.session_state.items[i]["unit_price"] = c3.number_input(f"单价", value=0.0, step=0.01, key=f"price_{i}")
+    # 使用 key 绑定确保数据能实时写回 session_state
+    st.session_state.items[i]["description"] = c1.text_input(f"描述 #{i+1}", value=item["description"], key=f"desc_input_{i}")
+    st.session_state.items[i]["quantity"] = c2.number_input(f"数量", value=float(item["quantity"]), key=f"qty_input_{i}")
+    st.session_state.items[i]["unit_price"] = c3.number_input(f"单价", value=float(item["unit_price"]), key=f"price_input_{i}")
 
-st.button("➕ 添加一行项目", on_click=add_item)
+st.button("➕ 添加项目", on_click=add_item)
 
-# 第三部分：额外参数与收款
+# --- 5. 生成按钮 ---
 st.markdown("---")
-with st.container():
-    c1, c2, c3 = st.columns(3)
-    currency = c1.selectbox("币种", ["USD", "SGD", "CNY", "EUR", "GBP"])
-    due_date = c2.text_input("截止日期", value=(datetime.date.today() + datetime.timedelta(days=30)).strftime("%Y-%m-%d"))
-    terms = c3.text_input("支付条款", "Net 30 Days")
-
-st.subheader("🏦 收款银行信息")
-b_col1, b_col2 = st.columns(2)
-beneficiary_name = b_col1.text_input("开户名 (Beneficiary Name)")
-bank_account_number = b_col1.text_input("账号 (Account Number)")
-bank_name = b_col2.text_input("银行名称 (Bank Name)")
-swift_code = b_col2.text_input("SWIFT Code")
-
-# 第四部分：生成与下载
-st.markdown("---")
-if st.button("🚀 生成并预览 PDF", type="primary", use_container_width=True):
-    # 组装数据
+if st.button("🚀 生成 PDF 发票", type="primary"):
+    # 这里放 generate_pdf 的调用逻辑（保持和之前一样）
     final_data = {
         "issuer_name": issuer_name,
         "issuer_address": issuer_address,
         "recipient_name": recipient_name,
         "recipient_address": recipient_address,
-        "currency": currency,
-        "due_date": due_date,
-        "terms": terms,
-        "beneficiary_name": beneficiary_name,
-        "bank_account_number": bank_account_number,
-        "bank_name": bank_name,
-        "swift_code": swift_code,
-        "items": st.session_state.items
+        "items": st.session_state.items,
+        "currency": "USD" # 简化版
     }
-    
+    # ... 剩下的生成代码 ...
     try:
         pdf_buf, inv_no = generate_pdf(final_data)
-        st.success(f"成功！发票编号: {inv_no}")
-        st.download_button(
-            label="📥 点击下载 PDF 发票",
-            data=pdf_buf,
-            file_name=f"Invoice_{inv_no}.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
+        st.success(f"发票已生成: {inv_no}")
+        st.download_button("📥 下载 PDF", data=pdf_buf, file_name=f"{inv_no}.pdf", mime="application/pdf")
     except Exception as e:
-        st.error(f"生成失败: {e}")
+        st.error(f"出错啦: {e}")
