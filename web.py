@@ -29,7 +29,7 @@ def check_manual_auth():
     if st.session_state["auth_success"]:
         return True
 
-    st.title("🛡️ 财务系统访问审计")
+    st.title("🛡️ 系统访问控制")
     st.markdown("---")
     reg_name = st.text_input("请输入您的姓名 / 办公邮箱 (必填)", placeholder="例如: Zhang San")
     reg_password = st.text_input("访问密码", type="password")
