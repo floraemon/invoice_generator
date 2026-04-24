@@ -18,11 +18,11 @@ def check_password():
         else:
             st.session_state["password_correct"] = False
     if "password_correct" not in st.session_state:
-        st.title("🔒 财务系统访问控制")
+        st.title("🔒 开票系统访问控制")
         st.text_input("请输入访问密码", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
-        st.title("🔒 财务系统访问控制")
+        st.title("🔒 开票系统访问控制")
         st.text_input("密码错误，请重试", type="password", on_change=password_entered, key="password")
         st.error("😕 密码不正确")
         return False
@@ -154,7 +154,7 @@ def add_row(): st.session_state['inv_rows'].append({"desc": "", "qty": 1.0, "pri
 def del_row(): 
     if len(st.session_state['inv_rows']) > 1: st.session_state['inv_rows'].pop()
 
-st.title("📑 财务开票系统 (合规版)")
+st.title("📑 开票系统 (合规版)")
 
 scene = st.radio("业务场景：", ["Bill To HYV", "Bill From HYV"], horizontal=True)
 
