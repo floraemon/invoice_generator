@@ -112,7 +112,7 @@ def del_row():
 st.title("📑 线上开票系统")
 
 # 场景一键切换
-scene = st.radio("业务方向：", ["Bill To HoYoverse", "Bill From HoYoverse"], horizontal=True)
+scene = st.radio("业务方向：", ["Bill To HYV", "Bill From HYV"], horizontal=True)
 
 col1, col2 = st.columns(2)
 with col1:
