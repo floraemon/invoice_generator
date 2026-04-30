@@ -8,12 +8,82 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_RIGHT, TA_LEFT
 
 # ==========================================
-# 0. 审计日志与身份校验逻辑
+# 0. 多语言配置 (Multi-language Dictionary)
+# ==========================================
+LANG_DICT = {
+    "English": {
+        "sys_title": "🛡️ System Access Control",
+        "login_label": "Enter Name / Office Email",
+        "pwd_label": "Access Password",
+        "login_btn": "Enter System",
+        "auth_err_name": "❌ Audit requirement: Please register identity.",
+        "auth_err_pwd": "❌ Incorrect password.",
+        "op_user": "👤 Operator:",
+        "logout": "Logout",
+        "app_title": "📑 Invoice Automation System",
+        "scene_label": "Business Scenario:",
+        "from_sec": "FROM (Party A) *",
+        "to_sec": "BILL TO (Party B) *",
+        "items_sec": "📦 Line Items *",
+        "desc": "Description",
+        "qty": "Qty",
+        "price": "Unit Price",
+        "add_row": "➕ Add Row",
+        "del_row": "➖ Remove Row",
+        "bank_sec": "🏦 Terms & Banking *",
+        "terms": "Terms",
+        "due_date": "Due Date",
+        "acc_name": "Account Name",
+        "acc_num": "Account Number",
+        "bank_name": "Bank Name",
+        "swift": "SWIFT Code",
+        "bank_addr": "Bank Address",
+        "gen_pdf": "🚀 Generate PDF",
+        "err_fill": "❌ Error: Please fill in all required fields.",
+        "success": "Ready!",
+        "download": "📥 Download PDF"
+    },
+    "中文": {
+        "sys_title": "🛡️ 系统访问控制",
+        "login_label": "请输入您的姓名 / 办公邮箱",
+        "pwd_label": "访问密码",
+        "login_btn": "进入系统",
+        "auth_err_name": "❌ 审计要求：请先登记您的身份。",
+        "auth_err_pwd": "❌ 密码错误。",
+        "op_user": "👤 当前操作员:",
+        "logout": "登出系统",
+        "app_title": "📑 发票自动化生成系统",
+        "scene_label": "业务场景：",
+        "from_sec": "甲方 (From) *",
+        "to_sec": "乙方 (Bill To) *",
+        "items_sec": "📦 费用明细 *",
+        "desc": "描述",
+        "qty": "数量",
+        "price": "单价",
+        "add_row": "➕ 添加行",
+        "del_row": "➖ 减少行",
+        "bank_sec": "🏦 条款与银行 *",
+        "terms": "条款 (Terms)",
+        "due_date": "到期日 (Due Date)",
+        "acc_name": "账户名称",
+        "acc_num": "银行账号",
+        "bank_name": "银行名称",
+        "swift": "SWIFT 代码",
+        "bank_addr": "银行地址",
+        "gen_pdf": "🚀 生成 PDF",
+        "err_fill": "❌ 错误：请填写必填项。",
+        "success": "已就绪！",
+        "download": "📥 下载 PDF"
+    }
+}
+
+# ==========================================
+# 1. 审计日志与身份校验逻辑
 # ==========================================
 def write_audit_log(visitor):
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-    log_msg = f"[{timestamp}] 登录成功: 用户 -> {visitor}"
+    log_msg = f"[{timestamp}] Login Success: User -> {visitor}"
     print(log_msg) 
     try:
         with open("access_log.txt", "a", encoding="utf-8") as f:
@@ -25,21 +95,30 @@ def check_manual_auth():
     if "auth_success" not in st.session_state:
         st.session_state["auth_success"] = False
         st.session_state["visitor_name"] = ""
+    
+    # 语言选择初始化
+    if "lang" not in st.session_state:
+        st.session_state["lang"] = "English"
 
     if st.session_state["auth_success"]:
         return True
 
-    st.title("🛡️ 系统访问控制")
+    # 登录界面的语言切换
+    sel_lang = st.radio("Language / 语言", ["English", "中文"], horizontal=True)
+    st.session_state["lang"] = sel_lang
+    L = LANG_DICT[sel_lang]
+
+    st.title(L["sys_title"])
     st.markdown("---")
-    reg_name = st.text_input("请输入您的姓名 / 办公邮箱 (必填)", placeholder="例如: Zhang San")
-    reg_password = st.text_input("访问密码", type="password")
+    reg_name = st.text_input(L["login_label"], placeholder="e.g. Zhang San")
+    reg_password = st.text_input(L["pwd_label"], type="password")
     
-    if st.button("进入系统", use_container_width=True, type="primary"):
-        system_password = st.secrets.get("password", "")
+    if st.button(L["login_btn"], use_container_width=True, type="primary"):
+        system_password = st.secrets.get("password", "888") # 默认密码
         if not reg_name:
-            st.error("❌ 审计要求：请先登记您的身份。")
+            st.error(L["auth_err_name"])
         elif reg_password != system_password:
-            st.error("❌ 密码错误。")
+            st.error(L["auth_err_pwd"])
         else:
             write_audit_log(reg_name)
             st.session_state["auth_success"] = True
@@ -50,29 +129,33 @@ def check_manual_auth():
 if not check_manual_auth():
     st.stop()
 
+# 快捷引用当前语言包
+L = LANG_DICT[st.session_state["lang"]]
+
 # --- 侧边栏专属审计模块 ---
-st.sidebar.markdown(f"**👤 当前操作员:**\n{st.session_state['visitor_name']}")
+st.sidebar.selectbox("🌐 Language / 语言", ["English", "中文"], key="lang")
+st.sidebar.markdown(f"**{L['op_user']}**\n{st.session_state['visitor_name']}")
 admin_command = st.sidebar.text_input("🔑 Admin Entry", type="password")
-if admin_command == "831228": # 这里修改你的暗号
-    st.sidebar.markdown("### 历史访问记录")
+if admin_command == "831228":
+    st.sidebar.markdown("### Logs")
     if os.path.exists("access_log.txt"):
         with open("access_log.txt", "r", encoding="utf-8") as f:
             st.sidebar.text_area("Logs Data", f.read(), height=300)
 
-if st.sidebar.button("登出系统"):
+if st.sidebar.button(L["logout"]):
     st.session_state["auth_success"] = False
     st.rerun()
 
 # ==========================================
-# 1. 业务配置 (HYV 官方法定资料)
+# 2. 业务配置 (HYV 官方法定资料)
 # ==========================================
 HYV_DETAILS = {
-    "name": "HoYoverse Pte. Ltd.",
+    "name": "COGNOSPHERE PTE. LTD.",
     "address": "1 One-North Crescent, #06-01/02, Razer Sea HQ, Singapore 138538"
 }
 
 # ==========================================
-# 2. PDF 生成函数 (完美对齐版)
+# 3. PDF 生成函数 (保持英文，通常发票使用英文)
 # ==========================================
 def generate_pdf(data):
     items = data.get("items", [])
@@ -138,7 +221,7 @@ def generate_pdf(data):
     return buf, invoice_no
 
 # ==========================================
-# 3. 页面布局与逻辑
+# 4. 页面布局与逻辑
 # ==========================================
 st.set_page_config(page_title="HYV Invoice Manager", layout="wide")
 
@@ -149,56 +232,56 @@ def add_row(): st.session_state['inv_rows'].append({"desc": "", "qty": 1.0, "pri
 def del_row(): 
     if len(st.session_state['inv_rows']) > 1: st.session_state['inv_rows'].pop()
 
-st.title("📑 发票自动化生成系统")
+st.title(L["app_title"])
 
 # 场景切换
-scene = st.radio("业务场景：", ["Bill To HYV", "Bill From HYV"], horizontal=True)
+scene = st.radio(L["scene_label"], ["Bill To HYV", "Bill From HYV"], horizontal=True)
 
-# 关键修复：通过在 key 中引入 scene，强制 Streamlit 在切换场景时刷新输入框的值
 col1, col2 = st.columns(2)
 with col1:
-    st.subheader("甲方 (From) *")
+    st.subheader(L["from_sec"])
     if scene == "Bill From HYV":
         f_name = st.text_input("Name", value=HYV_DETAILS["name"], key=f"f_n_hyv_{scene}")
         f_addr = st.text_area("Address", value=HYV_DETAILS["address"], key=f"f_a_hyv_{scene}")
     else:
-        f_name = st.text_input("Name", value="", placeholder="您的公司名称", key=f"f_n_cust_{scene}")
-        f_addr = st.text_area("Address", value="", placeholder="您的详细地址", key=f"f_a_cust_{scene}")
+        f_name = st.text_input("Name", value="", key=f"f_n_cust_{scene}")
+        f_addr = st.text_area("Address", value="", key=f"f_a_cust_{scene}")
 
 with col2:
-    st.subheader("乙方 (Bill To) *")
+    st.subheader(L["to_sec"])
     if scene == "Bill To HYV":
         t_name = st.text_input("Customer Name", value=HYV_DETAILS["name"], key=f"t_n_hyv_{scene}")
         t_addr = st.text_area("Customer Address", value=HYV_DETAILS["address"], key=f"t_a_hyv_{scene}")
     else:
-        t_name = st.text_input("Customer Name", value="", placeholder="客户公司名称", key=f"t_n_cust_{scene}")
-        t_addr = st.text_area("Customer Address", value="", placeholder="客户详细地址", key=f"t_a_cust_{scene}")
+        t_name = st.text_input("Customer Name", value="", key=f"t_n_cust_{scene}")
+        t_addr = st.text_area("Customer Address", value="", key=f"t_a_cust_{scene}")
 
 st.divider()
-st.subheader("📦 费用明细 *")
+st.subheader(L["items_sec"])
 for i, row in enumerate(st.session_state['inv_rows']):
     c1, c2, c3 = st.columns([3, 1, 1])
-    st.session_state['inv_rows'][i]["desc"] = c1.text_input(f"描述 #{i+1}", value=row["desc"], key=f"d_{i}")
-    st.session_state['inv_rows'][i]["qty"] = c2.number_input(f"数量", value=float(row["qty"]), min_value=0.01, key=f"q_{i}")
-    st.session_state['inv_rows'][i]["price"] = c3.number_input(f"单价", value=float(row["price"]), min_value=0.0, key=f"p_{i}")
+    st.session_state['inv_rows'][i]["desc"] = c1.text_input(f"{L['desc']} #{i+1}", value=row["desc"], key=f"d_{i}")
+    st.session_state['inv_rows'][i]["qty"] = c2.number_input(L["qty"], value=float(row["qty"]), min_value=0.01, key=f"q_{i}")
+    st.session_state['inv_rows'][i]["price"] = c3.number_input(L["price"], value=float(row["price"]), min_value=0.0, key=f"p_{i}")
 
-st.button("➕ 添加行", on_click=add_row)
-st.button("➖ 减少行", on_click=del_row)
+col_btn1, col_btn2, _ = st.columns([1, 1, 4])
+with col_btn1: st.button(L["add_row"], on_click=add_row, use_container_width=True)
+with col_btn2: st.button(L["del_row"], on_click=del_row, use_container_width=True)
 
 st.divider()
-st.subheader("🏦 条款与银行 *")
+st.subheader(L["bank_sec"])
 b_col1, b_col2 = st.columns(2)
-terms = b_col1.text_input("Terms", "Net 45 Days")
-due_date = b_col1.text_input("Due Date", (datetime.date.today() + datetime.timedelta(days=45)).strftime("%Y-%m-%d"))
-b_name = b_col2.text_input("Account Name")
-b_acc = b_col2.text_input("Account Number")
-b_bank = b_col1.text_input("Bank Name")
-b_swift = b_col2.text_input("SWIFT Code")
-b_addr = st.text_area("Bank Address")
+terms = b_col1.text_input(L["terms"], "Net 45 Days")
+due_date = b_col1.text_input(L["due_date"], (datetime.date.today() + datetime.timedelta(days=45)).strftime("%Y-%m-%d"))
+b_name = b_col2.text_input(L["acc_name"])
+b_acc = b_col2.text_input(L["acc_num"])
+b_bank = b_col1.text_input(L["bank_name"])
+b_swift = b_col2.text_input(L["swift"])
+b_addr = st.text_area(L["bank_addr"])
 
-if st.button("🚀 生成 PDF", type="primary", use_container_width=True):
+if st.button(L["gen_pdf"], type="primary", use_container_width=True):
     if not f_name or not f_addr or not t_name or not t_addr or not b_name or not b_acc:
-        st.error("❌ 错误：请填写必填项。")
+        st.error(L["err_fill"])
     else:
         payload = {
             "from_name": f_name, "from_addr": f_addr, "to_name": t_name, "to_addr": t_addr,
@@ -207,5 +290,5 @@ if st.button("🚀 生成 PDF", type="primary", use_container_width=True):
             "items": st.session_state['inv_rows']
         }
         buf, name = generate_pdf(payload)
-        st.success(f"已就绪！")
-        st.download_button("📥 下载 PDF", data=buf, file_name=f"{name}.pdf", mime="application/pdf")
+        st.success(L["success"])
+        st.download_button(L["download"], data=buf, file_name=f"{name}.pdf", mime="application/pdf", use_container_width=True)
