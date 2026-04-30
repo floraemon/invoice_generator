@@ -80,7 +80,7 @@ LANG_DICT = {
 }
 
 # ==========================================
-# 1. 审计日志与身份校验逻辑
+# 1. 审计日志与身份校验
 # ==========================================
 def write_audit_log(visitor):
     now = datetime.datetime.now()
@@ -96,23 +96,17 @@ def check_manual_auth():
     if "auth_success" not in st.session_state:
         st.session_state["auth_success"] = False
         st.session_state["visitor_name"] = ""
-    
     if "lang" not in st.session_state:
         st.session_state["lang"] = "中文"
-
     if st.session_state["auth_success"]:
         return True
-
-    # 登录界面的语言切换
     sel_lang = st.radio("Language / 语言", ["English", "中文"], horizontal=True)
     st.session_state["lang"] = sel_lang
     L = LANG_DICT[sel_lang]
-
     st.title(L["sys_title"])
     st.markdown("---")
     reg_name = st.text_input(L["login_label"], placeholder="e.g. Zhang San")
     reg_password = st.text_input(L["pwd_label"], type="password")
-    
     if st.button(L["login_btn"], use_container_width=True, type="primary"):
         system_password = st.secrets.get("password", "")
         if not reg_name:
@@ -126,37 +120,20 @@ def check_manual_auth():
             st.rerun()
     return False
 
-# 必须先执行校验
 if not check_manual_auth():
     st.stop()
 
-# 快捷引用当前语言包
 L = LANG_DICT[st.session_state["lang"]]
 
-# --- 侧边栏专属审计模块 ---
+# --- 侧边栏 ---
 st.sidebar.selectbox("🌐 Language / 语言", ["English", "中文"], key="lang")
 st.sidebar.markdown(f"**{L['op_user']}**\n{st.session_state['visitor_name']}")
-admin_command = st.sidebar.text_input("🔑 Admin Entry", type="password")
-if admin_command == "831228":
-    st.sidebar.markdown("### Logs")
-    if os.path.exists("access_log.txt"):
-        with open("access_log.txt", "r", encoding="utf-8") as f:
-            st.sidebar.text_area("Logs Data", f.read(), height=300)
-
 if st.sidebar.button(L["logout"]):
     st.session_state["auth_success"] = False
     st.rerun()
 
 # ==========================================
-# 2. 业务配置 (HYV 官方法定资料)
-# ==========================================
-HYV_DETAILS = {
-    "name": "COGNOSPHERE PTE. LTD.",
-    "address": "1 One-North Crescent, #06-01/02, Razer Sea HQ, Singapore 138538"
-}
-
-# ==========================================
-# 3. PDF 生成函数 (保持英文标准)
+# 2. PDF 生成函数 (关键：对齐修正版)
 # ==========================================
 def generate_pdf(data):
     items = data.get("items", [])
@@ -175,6 +152,8 @@ def generate_pdf(data):
     s_label = style(fontSize=8,  textColor=colors.HexColor("#888888"), leading=11)
     s_bold  = style(fontSize=10, textColor=colors.HexColor("#222222"), leading=14, fontName="Helvetica-Bold")
     s_th    = style(fontSize=9,  textColor=colors.white, fontName="Helvetica-Bold", leading=12)
+    # 新增：专门用于右对齐的表头样式
+    s_th_right = style(fontSize=9, textColor=colors.white, fontName="Helvetica-Bold", leading=12, alignment=TA_RIGHT)
     s_td    = style(fontSize=9,  textColor=colors.HexColor("#333333"), leading=12)
     s_bank_h = style(fontSize=9,  textColor=colors.HexColor("#4472C4"), fontName="Helvetica-Bold", leading=13)
     s_bank   = style(fontSize=9,  textColor=colors.HexColor("#444444"), leading=13)
@@ -183,17 +162,28 @@ def generate_pdf(data):
     s_tot_r = style(fontSize=13, textColor=colors.HexColor("#4472C4"), fontName="Helvetica-Bold", leading=16, alignment=TA_RIGHT)
 
     story = []
+    # Header Section
     h_table = Table([[Paragraph("INVOICE", s_title), Table([[Paragraph("Invoice No.", s_label),  Paragraph(invoice_no, s_bold)], [Paragraph("Invoice Date", s_label), Paragraph(invoice_date, s_td)], [Paragraph("Due Date", s_label), Paragraph(data.get("due_date", "-"), s_td)], [Paragraph("Terms", s_label), Paragraph(data.get("terms", "-"), s_td)]], colWidths=[30*mm, 48*mm])]], colWidths=[W*0.5, W*0.5])
     h_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
     story.append(h_table)
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#4472C4"), spaceAfter=10))
 
+    # Addresses
     p_table = Table([[ [Paragraph("FROM", s_bank_h), Spacer(1, 2), Paragraph(data.get("from_name", ""), s_bold), Paragraph(data.get("from_addr", ""), s_small)], [Paragraph("BILL TO", s_bank_h), Spacer(1, 2), Paragraph(data.get("to_name", ""), s_bold), Paragraph(data.get("to_addr", ""), s_small)] ]], colWidths=[W*0.5, W*0.5])
     p_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0)]))
     story.append(p_table)
     story.append(Spacer(1, 15))
 
-    t_data = [[Paragraph("#", s_th), Paragraph("Description", s_th), Paragraph("Qty", s_th), Paragraph("Unit Price", s_th), Paragraph("Amount", s_th)]]
+    # Items Table (修正对齐逻辑)
+    # 对 Qty, Unit Price, Amount 的表头应用 s_th_right
+    t_data = [[
+        Paragraph("#", s_th), 
+        Paragraph("Description", s_th), 
+        Paragraph("Qty", s_th_right), 
+        Paragraph("Unit Price", s_th_right), 
+        Paragraph("Amount", s_th_right)
+    ]]
+    
     total = 0
     for idx, item in enumerate(items, 1):
         q, p = float(item.get("qty", 0)), float(item.get("price", 0))
@@ -202,14 +192,24 @@ def generate_pdf(data):
         t_data.append([str(idx), Paragraph(item.get("desc", ""), s_td), f"{q:g}", f"{p:,.2f}", f"{amt:,.2f}"])
 
     main_table = Table(t_data, colWidths=[W*0.05, W*0.45, W*0.12, W*0.18, W*0.20])
-    main_table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#4472C4")), ("GRID", (0,1), (-1,-1), 0.3, colors.HexColor("#DDDDDD")), ("ALIGN", (2,0), (-1,-1), "RIGHT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("BOTTOMPADDING", (0,0), (-1,-1), 6), ("TOPPADDING", (0,0), (-1,-1), 6)]))
+    main_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#4472C4")), 
+        ("GRID", (0,1), (-1,-1), 0.3, colors.HexColor("#DDDDDD")),
+        # 核心：设置从索引2(Qty)开始到最后一列，第0行(表头)到最后一行全部右对齐
+        ("ALIGN", (2,0), (-1,-1), "RIGHT"), 
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"), 
+        ("BOTTOMPADDING", (0,0), (-1,-1), 6), 
+        ("TOPPADDING", (0,0), (-1,-1), 6)
+    ]))
     story.append(main_table)
     
+    # Total
     story.append(Spacer(1, 6))
     tot_table = Table([[Paragraph("TOTAL", s_tot_l), Paragraph(f"{currency} {total:,.2f}", s_tot_r)]], colWidths=[W*0.75, W*0.25])
     tot_table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEF2FF")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 8), ("BOTTOMPADDING", (0,0), (-1,-1), 8)]))
     story.append(tot_table)
 
+    # Bank Info
     story.append(Spacer(1, 14))
     story.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#CCCCCC"), spaceAfter=8))
     story.append(Paragraph("Banking Information", s_bank_h))
@@ -217,13 +217,15 @@ def generate_pdf(data):
     b_table = Table(b_rows, colWidths=[W*0.32, W*0.68])
     b_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
     story.append(b_table)
+    
     doc.build(story)
     buf.seek(0)
     return buf, invoice_no
 
 # ==========================================
-# 4. 页面布局与逻辑
+# 3. 业务配置 & UI
 # ==========================================
+HYV_DETAILS = {"name": "COGNOSPHERE PTE. LTD.", "address": "1 One-North Crescent, #06-01/02, Razer Sea HQ, Singapore 138538"}
 st.set_page_config(page_title="Invoice Manager", layout="wide")
 
 if 'inv_rows' not in st.session_state:
@@ -233,57 +235,45 @@ def add_row(): st.session_state['inv_rows'].append({"desc": "", "qty": 1.0, "pri
 def del_row(): 
     if len(st.session_state['inv_rows']) > 1: st.session_state['inv_rows'].pop()
 
-# 主标题与警告注释
 st.title(L["app_title"])
 st.warning(L["warning_box"])
-
-# 场景切换
 scene = st.radio(L["scene_label"], ["Bill To HYV", "Bill From HYV"], horizontal=True)
 
-col1, col2 = st.columns(2)
-with col1:
+c1, c2 = st.columns(2)
+with c1:
     st.subheader(L["from_sec"])
-    if scene == "Bill From HYV":
-        f_name = st.text_input("Name", value=HYV_DETAILS["name"], key=f"f_n_hyv_{scene}")
-        f_addr = st.text_area("Address", value=HYV_DETAILS["address"], key=f"f_a_hyv_{scene}")
-    else:
-        f_name = st.text_input("Name", value="", key=f"f_n_cust_{scene}")
-        f_addr = st.text_area("Address", value="", key=f"f_a_cust_{scene}")
-
-with col2:
+    f_name = st.text_input("Name", value=HYV_DETAILS["name"] if scene=="Bill From HYV" else "", key=f"f_n_{scene}")
+    f_addr = st.text_area("Address", value=HYV_DETAILS["address"] if scene=="Bill From HYV" else "", key=f"f_a_{scene}")
+with c2:
     st.subheader(L["to_sec"])
-    if scene == "Bill To HYV":
-        t_name = st.text_input("Customer Name", value=HYV_DETAILS["name"], key=f"t_n_hyv_{scene}")
-        t_addr = st.text_area("Customer Address", value=HYV_DETAILS["address"], key=f"t_a_hyv_{scene}")
-    else:
-        t_name = st.text_input("Customer Name", value="", key=f"t_n_cust_{scene}")
-        t_addr = st.text_area("Customer Address", value="", key=f"t_a_cust_{scene}")
+    t_name = st.text_input("Customer Name", value=HYV_DETAILS["name"] if scene=="Bill To HYV" else "", key=f"t_n_{scene}")
+    t_addr = st.text_area("Customer Address", value=HYV_DETAILS["address"] if scene=="Bill To HYV" else "", key=f"t_a_{scene}")
 
 st.divider()
 st.subheader(L["items_sec"])
 for i, row in enumerate(st.session_state['inv_rows']):
-    c1, c2, c3 = st.columns([3, 1, 1])
-    st.session_state['inv_rows'][i]["desc"] = c1.text_input(f"{L['desc']} #{i+1}", value=row["desc"], key=f"d_{i}")
-    st.session_state['inv_rows'][i]["qty"] = c2.number_input(f"{L['qty']} #{i+1}", value=float(row["qty"]), min_value=0.01, key=f"q_{i}")
-    st.session_state['inv_rows'][i]["price"] = c3.number_input(f"{L['price']} #{i+1}", value=float(row["price"]), min_value=0.0, key=f"p_{i}")
+    col_i1, col_i2, col_i3 = st.columns([3, 1, 1])
+    st.session_state['inv_rows'][i]["desc"] = col_i1.text_input(f"{L['desc']} #{i+1}", value=row["desc"], key=f"d_{i}")
+    st.session_state['inv_rows'][i]["qty"] = col_i2.number_input(f"{L['qty']} #{i+1}", value=float(row["qty"]), key=f"q_{i}")
+    st.session_state['inv_rows'][i]["price"] = col_i3.number_input(f"{L['price']} #{i+1}", value=float(row["price"]), key=f"p_{i}")
 
-btn_c1, btn_c2, _ = st.columns([1, 1, 4])
-btn_c1.button(L["add_row"], on_click=add_row, use_container_width=True)
-btn_c2.button(L["del_row"], on_click=del_row, use_container_width=True)
+bc1, bc2, _ = st.columns([1, 1, 4])
+bc1.button(L["add_row"], on_click=add_row, use_container_width=True)
+bc2.button(L["del_row"], on_click=del_row, use_container_width=True)
 
 st.divider()
 st.subheader(L["bank_sec"])
-b_col1, b_col2 = st.columns(2)
-terms = b_col1.text_input(L["terms"], "Net 45 Days")
-due_date = b_col1.text_input(L["due_date"], (datetime.date.today() + datetime.timedelta(days=45)).strftime("%Y-%m-%d"))
-b_name = b_col2.text_input(L["acc_name"])
-b_acc = b_col2.text_input(L["acc_num"])
-b_bank = b_col1.text_input(L["bank_name"])
-b_swift = b_col2.text_input(L["swift"])
+b1, b2 = st.columns(2)
+terms = b1.text_input(L["terms"], "Net 45 Days")
+due_date = b1.text_input(L["due_date"], (datetime.date.today() + datetime.timedelta(days=45)).strftime("%Y-%m-%d"))
+b_name = b2.text_input(L["acc_name"])
+b_acc = b2.text_input(L["acc_num"])
+b_bank = b1.text_input(L["bank_name"])
+b_swift = b2.text_input(L["swift"])
 b_addr = st.text_area(L["bank_addr"])
 
 if st.button(L["gen_pdf"], type="primary", use_container_width=True):
-    if not f_name or not f_addr or not t_name or not t_addr or not b_name or not b_acc:
+    if not f_name or not t_name or not b_name or not b_acc:
         st.error(L["err_fill"])
     else:
         payload = {
